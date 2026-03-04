@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Message Console</title>
+    <style>
+        :root {
+            --bg-color: #f5f5f5;
+            --panel-bg: #ffffff;
+            --text-main: #333333;
+            --text-muted: #666666;
+            --border-color: #dddddd;
+            --primary-color: #2c3e50;
+            --primary-hover: #1a252f;
+            --success-color: #27ae60;
+            --error-color: #c0392b;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding: 40px 20px;
+            margin: 0;
+            font-size: 14px;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: var(--panel-bg);
+            padding: 30px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        h2 { margin-top: 0; margin-bottom: 20px; font-size: 1.2rem; font-weight: 600; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
+        
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: 500; margin-bottom: 6px; }
+        
+        input[type="password"], textarea, input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+        
+        textarea { height: 100px; resize: vertical; }
+        input:focus, textarea:focus { outline: none; border-color: var(--primary-color); }
+
+        .config-panel {
+            background: #fafafa;
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        .config-row { display: flex; align-items: center; margin-bottom: 10px; }
+        .config-row:last-child { margin-bottom: 0; }
+        .config-row input[type="checkbox"] { margin-right: 8px; }
+        .config-row input[type="number"] { width: 70px; margin-left: 10px; padding: 6px; }
+
+        .divider { height: 1px; background: var(--border-color); margin: 15px 0; }
+        .note { font-size: 0.8rem; color: var(--text-muted); margin-left: 5px; }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover { background: var(--primary-hover); }
+        button:disabled { background: #95a5a6; cursor: not-allowed; }
+
+        #status { margin-top: 15px; font-weight: 500; text-align: center; min-height: 20px; }
+        
+        .history-box { margin-top: 25px; border-top: 1px solid var(--border-color); padding-top: 15px; }
+        .history-title { font-weight: 500; margin-bottom: 10px; font-size: 0.9rem; }
+        .history-item { font-size: 0.85rem; color: var(--text-muted); padding: 6px 0; border-bottom: 1px dashed var(--border-color); }
+        .history-item:last-child { border-bottom: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Message Console</h2>
+    
+    <div class="form-group">
+        <label for="token">Secret Token</label>
+        <input type="password" id="token" placeholder="Enter authentication token" required>
+    </div>
+
+    <div class="form-group">
+        <label for="message">Message</label>
+        <textarea id="message" placeholder="Type your message here (Ctrl+Enter to send)" required></textarea>
+    </div>
+
+    <div class="config-panel">
+        <div class="config-row">
+            <input type="checkbox" id="useZeroWidth" checked>
+            <label for="useZeroWidth" style="margin:0; font-weight:normal;">Obfuscate with zero-width characters</label>
+        </div>
+        
+        <div class="config-row">
+            <input type="checkbox" id="useRandomString" checked>
+            <label for="useRandomString" style="margin:0; font-weight:normal;">Append random ID string</label>
+        </div>
+        <div class="config-row" style="padding-left: 20px;">
+            <span class="note">Length (1-100):</span>
+            <input type="number" id="randomStringLength" value="8" min="1" max="100">
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="config-row">
+            <span style="width: 120px;">Send Count:</span>
+            <input type="number" id="sendCount" value="1" min="1">
+            <span class="note">times</span>
+        </div>
+        <div class="config-row">
+            <span style="width: 120px;">Send Interval:</span>
+            <input type="number" id="sendInterval" value="1000" min="0">
+            <span class="note">ms (+0~20ms random jitter)</span>
+        </div>
+    </div>
+
+    <button id="sendBtn">Send Message</button>
+
+    <div id="status"></div>
+
+    <div class="history-box" id="historyContainer" style="display: none;">
+        <div class="history-title">Recent Transmissions</div>
+        <div id="historyList"></div>
+    </div>
+</div>
+
+<script>
+    // --- Configuration ---
+    const WORKER_URL = "https://your-worker-name.your-subdomain.workers.dev";
+    // ---------------------
+
+    const elements = {
+        token: document.getElementById("token"),
+        message: document.getElementById("message"),
+        useZeroWidth: document.getElementById("useZeroWidth"),
+        useRandomString: document.getElementById("useRandomString"),
+        randomStringLength: document.getElementById("randomStringLength"),
+        sendCount: document.getElementById("sendCount"),
+        sendInterval: document.getElementById("sendInterval"),
+        btn: document.getElementById("sendBtn"),
+        status: document.getElementById("status"),
+        historyContainer: document.getElementById("historyContainer"),
+        historyList: document.getElementById("historyList")
+    };
+
+    window.addEventListener("DOMContentLoaded", () => {
+        const savedToken = localStorage.getItem("auth_token");
+        if (savedToken) elements.token.value = savedToken;
+    });
+
+    elements.useRandomString.addEventListener("change", (e) => {
+        elements.randomStringLength.disabled = !e.target.checked;
+    });
+
+    elements.message.addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") elements.btn.click();
+    });
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    function setStatus(text, type) {
+        elements.status.textContent = text;
+        if (type === "error") elements.status.style.color = "var(--error-color)";
+        else if (type === "success") elements.status.style.color = "var(--success-color)";
+        else elements.status.style.color = "var(--text-muted)";
+    }
+
+    function addHistory(msg) {
+        elements.historyContainer.style.display = "block";
+        const div = document.createElement("div");
+        div.className = "history-item";
+        const shortMsg = msg.length > 35 ? msg.substring(0, 35) + "..." : msg;
+        
+        const now = new Date();
+        const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+        
+        div.textContent = `[${timeString}] ${shortMsg}`;
+        elements.historyList.prepend(div);
+        if (elements.historyList.children.length > 5) elements.historyList.lastChild.remove();
+    }
+
+    elements.btn.addEventListener("click", async () => {
+        const tokenVal = elements.token.value.trim();
+        const messageVal = elements.message.value.trim();
+        const totalCount = parseInt(elements.sendCount.value, 10) || 1;
+        const baseInterval = parseInt(elements.sendInterval.value, 10) || 0;
+
+        if (!tokenVal || !messageVal) {
+            setStatus("Token and message are required.", "error");
+            return;
+        }
+
+        localStorage.setItem("auth_token", tokenVal);
+        elements.btn.disabled = true;
+
+        let successCount = 0;
+
+        for (let i = 1; i <= totalCount; i++) {
+            elements.btn.textContent = `Sending... (${i}/${totalCount})`;
+            setStatus(`Processing request ${i} of ${totalCount}...`, "info");
+
+            try {
+                const payload = { 
+                    token: tokenVal, 
+                    message: messageVal,
+                    useZeroWidth: elements.useZeroWidth.checked,
+                    useRandomString: elements.useRandomString.checked,
+                    randomStringLength: parseInt(elements.randomStringLength.value, 10) || 8
+                };
+
+                const response = await fetch(WORKER_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    successCount++;
+                } else {
+                    setStatus(`Aborted at #${i}: ${data.error}`, "error");
+                    break;
+                }
+            } catch (error) {
+                setStatus(`Network error at #${i}. Aborted.`, "error");
+                console.error(error);
+                break;
+            }
+
+            // 次の送信がある場合のみ待機
+            if (i < totalCount) {
+                // 0〜20msのランダムな揺らぎ(ジッター)を加算
+                const jitter = Math.floor(Math.random() * 21);
+                await sleep(baseInterval + jitter);
+            }
+        }
+
+        if (successCount === totalCount) {
+            setStatus(`Successfully sent ${totalCount} message(s).`, "success");
+            addHistory(`${messageVal} (x${totalCount})`);
+            elements.message.value = ""; 
+        }
+
+        elements.btn.disabled = false;
+        elements.btn.textContent = "Send Message";
+    });
+</script>
+
+</body>
+</html>
