@@ -15,6 +15,7 @@
             --primary-hover: #1a252f;
             --success-color: #27ae60;
             --error-color: #c0392b;
+            --warning-color: #e67e22;
         }
 
         body {
@@ -27,7 +28,7 @@
         }
 
         .container {
-            max-width: 500px;
+            max-width: 600px;
             margin: 0 auto;
             background: var(--panel-bg);
             padding: 30px;
@@ -37,11 +38,12 @@
         }
 
         h2 { margin-top: 0; margin-bottom: 20px; font-size: 1.2rem; font-weight: 600; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
+        h3 { font-size: 1rem; color: var(--text-muted); margin-bottom: 15px; border-bottom: 1px dashed var(--border-color); padding-bottom: 5px; }
         
         .form-group { margin-bottom: 15px; }
         label { display: block; font-weight: 500; margin-bottom: 6px; }
         
-        textarea, input[type="number"] {
+        input[type="text"], input[type="password"], textarea, input[type="number"] {
             width: 100%;
             padding: 10px;
             border: 1px solid var(--border-color);
@@ -64,10 +66,11 @@
         .config-row { display: flex; align-items: center; margin-bottom: 10px; }
         .config-row:last-child { margin-bottom: 0; }
         .config-row input[type="checkbox"] { margin-right: 8px; }
-        .config-row input[type="number"] { width: 70px; margin-left: 10px; padding: 6px; }
+        .config-row input[type="number"] { width: 80px; margin-left: 10px; padding: 6px; }
 
-        .divider { height: 1px; background: var(--border-color); margin: 15px 0; }
+        .divider { height: 1px; background: var(--border-color); margin: 20px 0; }
         .note { font-size: 0.8rem; color: var(--text-muted); margin-left: 5px; }
+        .warning-text { font-size: 0.8rem; color: var(--warning-color); margin-top: 4px; display: block; }
 
         button {
             width: 100%;
@@ -96,8 +99,34 @@
 <div class="container">
     <h2>Message Console</h2>
 
+    <h3>Connection Settings</h3>
+    <div class="config-panel">
+        <div class="form-group">
+            <label for="webhookUrl">Webhook URL</label>
+            <input type="text" id="webhookUrl" placeholder="https://discord.com/api/webhooks/...">
+        </div>
+        
+        <div class="divider"></div>
+        <span class="note" style="display:block; margin-bottom:10px;">Or use Token + Channel ID (Overrides Webhook)</span>
+        
+        <div class="form-group">
+            <label for="channelId">Channel ID</label>
+            <input type="text" id="channelId" placeholder="e.g. 123456789012345678">
+        </div>
+        <div class="form-group">
+            <label for="botToken">Bot Token</label>
+            <input type="password" id="botToken" placeholder="Bot token...">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+            <label for="userToken">User Token (Not Recommended)</label>
+            <input type="password" id="userToken" placeholder="User token...">
+            <span class="warning-text">Warning: Using User Tokens (Self-botting) violates Discord TOS.</span>
+        </div>
+    </div>
+
+    <h3>Message Payload</h3>
     <div class="form-group">
-        <label for="message">Message</label>
+        <label for="message">Message Content</label>
         <textarea id="message" placeholder="Type your message here (Ctrl+Enter to send)" required></textarea>
     </div>
 
@@ -142,10 +171,14 @@
 
 <script>
     // --- Configuration ---
-    const WORKER_URL = "https://floral-hall-6cdb.s103765s103765.workers.dev/";
+    const WORKER_URL = "https://your-worker-name.your-subdomain.workers.dev";
     // ---------------------
 
     const elements = {
+        webhookUrl: document.getElementById("webhookUrl"),
+        channelId: document.getElementById("channelId"),
+        botToken: document.getElementById("botToken"),
+        userToken: document.getElementById("userToken"),
         message: document.getElementById("message"),
         useZeroWidth: document.getElementById("useZeroWidth"),
         useRandomString: document.getElementById("useRandomString"),
@@ -157,6 +190,21 @@
         historyContainer: document.getElementById("historyContainer"),
         historyList: document.getElementById("historyList")
     };
+
+    // Load saved settings from localStorage
+    window.addEventListener("DOMContentLoaded", () => {
+        ['webhookUrl', 'channelId', 'botToken', 'userToken', 'sendCount', 'sendInterval'].forEach(id => {
+            const saved = localStorage.getItem(`app_${id}`);
+            if (saved) elements[id].value = saved;
+        });
+    });
+
+    // Save settings when changed
+    ['webhookUrl', 'channelId', 'botToken', 'userToken', 'sendCount', 'sendInterval'].forEach(id => {
+        elements[id].addEventListener("change", (e) => {
+            localStorage.setItem(`app_${id}`, e.target.value.trim());
+        });
+    });
 
     elements.useRandomString.addEventListener("change", (e) => {
         elements.randomStringLength.disabled = !e.target.checked;
@@ -180,10 +228,8 @@
         const div = document.createElement("div");
         div.className = "history-item";
         const shortMsg = msg.length > 35 ? msg.substring(0, 35) + "..." : msg;
-        
         const now = new Date();
         const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-        
         div.textContent = `[${timeString}] ${shortMsg}`;
         elements.historyList.prepend(div);
         if (elements.historyList.children.length > 5) elements.historyList.lastChild.remove();
@@ -191,11 +237,21 @@
 
     elements.btn.addEventListener("click", async () => {
         const messageVal = elements.message.value.trim();
+        const webhookVal = elements.webhookUrl.value.trim();
+        const botTokenVal = elements.botToken.value.trim();
+        const userTokenVal = elements.userToken.value.trim();
+        const channelIdVal = elements.channelId.value.trim();
+        
         const totalCount = parseInt(elements.sendCount.value, 10) || 1;
         const baseInterval = parseInt(elements.sendInterval.value, 10) || 0;
 
         if (!messageVal) {
             setStatus("Message is required.", "error");
+            return;
+        }
+
+        if (!webhookVal && !(channelIdVal && (botTokenVal || userTokenVal))) {
+            setStatus("Provide either a Webhook URL, or a Channel ID + Token.", "error");
             return;
         }
 
@@ -211,7 +267,11 @@
                     message: messageVal,
                     useZeroWidth: elements.useZeroWidth.checked,
                     useRandomString: elements.useRandomString.checked,
-                    randomStringLength: parseInt(elements.randomStringLength.value, 10) || 8
+                    randomStringLength: parseInt(elements.randomStringLength.value, 10) || 8,
+                    webhookUrl: webhookVal,
+                    botToken: botTokenVal,
+                    userToken: userTokenVal,
+                    channelId: channelIdVal
                 };
 
                 const response = await fetch(WORKER_URL, {
