@@ -170,9 +170,8 @@
 </div>
 
 <script>
-    // --- Configuration ---
-    const WORKER_URL = "https://your-worker-name.your-subdomain.workers.dev";
-    // ---------------------
+    const WORKER_URL = "https://floral-hall-6cdb.s103765s103765.workers.dev/";
+    
 
     const elements = {
         webhookUrl: document.getElementById("webhookUrl"),
@@ -191,15 +190,13 @@
         historyList: document.getElementById("historyList")
     };
 
-    // Load saved settings from localStorage
     window.addEventListener("DOMContentLoaded", () => {
         ['webhookUrl', 'channelId', 'botToken', 'userToken', 'sendCount', 'sendInterval'].forEach(id => {
             const saved = localStorage.getItem(`app_${id}`);
             if (saved) elements[id].value = saved;
         });
     });
-
-    // Save settings when changed
+    
     ['webhookUrl', 'channelId', 'botToken', 'userToken', 'sendCount', 'sendInterval'].forEach(id => {
         elements[id].addEventListener("change", (e) => {
             localStorage.setItem(`app_${id}`, e.target.value.trim());
